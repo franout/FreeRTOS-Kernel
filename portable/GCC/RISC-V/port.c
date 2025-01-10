@@ -57,6 +57,23 @@
     #define portTASK_RETURN_ADDRESS    0
 #endif
 
+
+#define PRINT_CAUSE_ON_REGS(cause)                                                                                     \
+	do                                                                                                                 \
+	{                                                                                                                  \
+		for (int i = 0; i < 10; i++)                                                                                   \
+		{                                                                                                              \
+			asm volatile("li x6,0xc1a0");                                                                              \
+			asm volatile("li x7,0xc1a0");                                                                              \
+			asm volatile("li x8,0xc1a0");                                                                              \
+			asm volatile("mv x9,%0" : : "r"(cause));                                                                   \
+			asm volatile("mv x10,%0" : : "r"(cause));                                                                  \
+			asm volatile("li x11,0xc1a0");                                                                             \
+			asm volatile("li x12,0xc1a0");                                                                             \
+		}                                                                                                              \
+	} while (0)
+
+
 /* The stack used by interrupt service routines.  Set configISR_STACK_SIZE_WORDS
  * to use a statically allocated array as the interrupt stack.  Alternative leave
  * configISR_STACK_SIZE_WORDS undefined and update the linker script so that a
@@ -186,7 +203,8 @@ BaseType_t xPortStartScheduler( void )
         /* Enable mtime and external interrupts.  1<<7 for timer interrupt,
          * 1<<11 for external interrupt.  _RB_ What happens here when mtime is
          * not present as with pulpino? */
-        __asm volatile ( "csrs mie, %0" ::"r" ( 0x880 ) );
+        /* enable interrupts */
+        portENABLE_INTERRUPTS();
     }
     #endif /* ( configMTIME_BASE_ADDRESS != 0 ) && ( configMTIMECMP_BASE_ADDRESS != 0 ) */
 
@@ -203,6 +221,7 @@ void vPortEndScheduler( void )
     /* Not implemented. */
     for( ; ; )
     {
+        PRINT_CAUSE_ON_REGS(0xdead);
     }
 }
 /*-----------------------------------------------------------*/

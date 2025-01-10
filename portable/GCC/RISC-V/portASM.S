@@ -197,10 +197,10 @@ definitions. */
  */
 pxPortInitialiseStack:
     csrr t0, mstatus                    /* Obtain current mstatus value. */
-    andi t0, t0, ~0x8                   /* Ensure interrupts are disabled when the stack is restored within an ISR.  Required when a task is created after the schedulre has been started, otherwise interrupts would be disabled anyway. */
-    addi t1, x0, 0x188                  /* Generate the value 0x1880, which are the MPIE and MPP bits to set in mstatus. */
+    andi t0, t0, ~(1 << 3)              /* Ensure interrupts are disabled when the stack is restored within an ISR.  Required when a task is created after the schedulre has been started, otherwise interrupts would be disabled anyway. */
+    addi t1, x0, 0x8                  /* Generate the value which are the MPIE  to set in mstatus. */
     slli t1, t1, 4
-    or t0, t0, t1                       /* Set MPIE and MPP bits in mstatus value. */
+    or t0, t0, t1                       /* Set MPIE and in mstatus value. */
 
     addi a0, a0, -portWORD_SIZE
     store_x t0, 0(a0)                   /* mstatus onto the stack. */
@@ -228,7 +228,7 @@ chip_specific_stack_frame:              /* First add any chip specific registers
     store_x a1, 0(a0)                   /* mret value (pxCode parameter) onto the stack. */
     ret
 /*-----------------------------------------------------------*/
-
+.align 8
 xPortStartFirstTask:
     load_x  sp, pxCurrentTCB            /* Load pxCurrentTCB. */
     load_x  sp, 0( sp )                 /* Read sp from first TCB member. */
@@ -279,6 +279,7 @@ xPortStartFirstTask:
     addi    sp, sp, portCONTEXT_SIZE
     ret
 /*-----------------------------------------------------------*/
+.align 8
 
 freertos_risc_v_application_exception_handler:
     csrr t0, mcause     /* For viewing in the debugger only. */
@@ -292,38 +293,6 @@ freertos_risc_v_application_interrupt_handler:
     csrr t1, mepc       /* For viewing in the debugger only */
     csrr t2, mstatus    /* For viewing in the debugger only */
     j .
-/*-----------------------------------------------------------*/
-
-.section .text.freertos_risc_v_exception_handler
-freertos_risc_v_exception_handler:
-    portcontextSAVE_EXCEPTION_CONTEXT
-    /* a0 now contains mcause. */
-    li t0, 11                           /* 11 == environment call. */
-    bne a0, t0, other_exception         /* Not an M environment call, so some other exception. */
-    call vTaskSwitchContext
-    portcontextRESTORE_CONTEXT
-
-other_exception:
-    call freertos_risc_v_application_exception_handler
-    portcontextRESTORE_CONTEXT
-/*-----------------------------------------------------------*/
-
-.section .text.freertos_risc_v_interrupt_handler
-freertos_risc_v_interrupt_handler:
-    portcontextSAVE_INTERRUPT_CONTEXT
-    call freertos_risc_v_application_interrupt_handler
-    portcontextRESTORE_CONTEXT
-/*-----------------------------------------------------------*/
-
-.section .text.freertos_risc_v_mtimer_interrupt_handler
-freertos_risc_v_mtimer_interrupt_handler:
-    portcontextSAVE_INTERRUPT_CONTEXT
-    portUPDATE_MTIMER_COMPARE_REGISTER
-    call xTaskIncrementTick
-    beqz a0, exit_without_context_switch    /* Don't switch context if incrementing tick didn't unblock a task. */
-    call vTaskSwitchContext
-exit_without_context_switch:
-    portcontextRESTORE_CONTEXT
 /*-----------------------------------------------------------*/
 
 .section .text.freertos_risc_v_trap_handler
@@ -348,33 +317,11 @@ synchronous_exception:
     j handle_exception
 
 handle_interrupt:
-#if( portasmHAS_MTIME != 0 )
-
-    test_if_mtimer:                     /* If there is a CLINT then the mtimer is used to generate the tick interrupt. */
-        addi t0, x0, 1
-        slli t0, t0, __riscv_xlen - 1   /* LSB is already set, shift into MSB.  Shift 31 on 32-bit or 63 on 64-bit cores. */
-        addi t1, t0, 7                  /* 0x8000[]0007 == machine timer interrupt. */
-        bne a0, t1, application_interrupt_handler
-
-        portUPDATE_MTIMER_COMPARE_REGISTER
-        call xTaskIncrementTick
-        beqz a0, processed_source       /* Don't switch context if incrementing tick didn't unblock a task. */
-        call vTaskSwitchContext
-        j processed_source
-
-#endif /* portasmHAS_MTIME */
-
 application_interrupt_handler:
     call freertos_risc_v_application_interrupt_handler
     j processed_source
 
 handle_exception:
-    /* a0 contains mcause. */
-    li t0, 11                                   /* 11 == environment call. */
-    bne a0, t0, application_exception_handler   /* Not an M environment call, so some other exception. */
-    call vTaskSwitchContext
-    j processed_source
-
 application_exception_handler:
     call freertos_risc_v_application_exception_handler
     j processed_source                  /* No other exceptions handled yet. */

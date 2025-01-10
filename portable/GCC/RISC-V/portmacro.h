@@ -46,6 +46,8 @@
  *-----------------------------------------------------------
  */
 
+#include "riscv-csr.h"
+
 /* Type definitions. */
 #if __riscv_xlen == 64
     #define portSTACK_TYPE           uint64_t
@@ -85,13 +87,18 @@ typedef portUBASE_TYPE   TickType_t;
 #ifdef __riscv_32e
     #define portBYTE_ALIGNMENT    8     /* RV32E uses RISC-V EABI with reduced stack alignment requirements */
 #else
-    #define portBYTE_ALIGNMENT    16
+    #define portBYTE_ALIGNMENT    2
 #endif
 /*-----------------------------------------------------------*/
 
 /* Scheduler utilities. */
 extern void vTaskSwitchContext( void );
-#define portYIELD()                __asm volatile ( "ecall" );
+#define portYIELD()               do { \
+                    __asm volatile ( "la t1,0x50" );\
+                    __asm volatile ( "sw t0,0(t1)" );\
+                    portMEMORY_BARRIER();\
+                                    }while(0)
+
 #define portEND_SWITCHING_ISR( xSwitchRequired ) \
     do                                           \
     {                                            \
@@ -111,8 +118,13 @@ extern void vTaskSwitchContext( void );
 /* Critical section management. */
 #define portCRITICAL_NESTING_IN_TCB    0
 
-#define portDISABLE_INTERRUPTS()                                   __asm volatile ( "csrc mstatus, 8" )
-#define portENABLE_INTERRUPTS()                                    __asm volatile ( "csrs mstatus, 8" )
+#define portDISABLE_INTERRUPTS()                                   do {csr_clr_bits_mie(MIE_MEI_BIT_MASK|MIE_MSI_BIT_MASK|MIE_MTI_BIT_MASK);\
+                                                                   csr_clr_bits_mstatus(MSTATUS_MIE_BIT_MASK);}\
+                                                                   while(0)
+
+#define portENABLE_INTERRUPTS()                                    do {csr_set_bits_mie(MIE_MEI_BIT_MASK|MIE_MSI_BIT_MASK|MIE_MTI_BIT_MASK);\
+                                                                   csr_set_bits_mstatus(MSTATUS_MIE_BIT_MASK);}\
+                                                                   while (0)
 
 extern size_t xCriticalNesting;
 #define portENTER_CRITICAL()      \
